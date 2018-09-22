@@ -38,6 +38,7 @@ pub struct FuncName(u32);
 pub struct Frame {
     pub ret_addr: IP,
     pub stack: Vec<i128>,
+    pub env: Vec<ID>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -67,7 +68,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
     let mut env = Vec::new();
     let mut num_state = false;
 
-    env.push(Frame{ret_addr: IP(0), stack: Vec::new()});
+    env.push(Frame{ret_addr: IP(0), stack: Vec::new(), env: Vec::new()});
 
     let mut current_scope = &global;
 
@@ -185,7 +186,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                     }
                 }
             },
-            '+' | '-' | '*' | '/' => {
+            '+' | '-' | '*' | '/' | '>' | '<' | '=' => {
                 match (stack.pop(), stack.pop()) {
                     (Some(a), Some(b)) => {
                         stack.push(
@@ -194,6 +195,9 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                                 '-' => a - b,
                                 '*' => a * b,
                                 '/' => a / b,
+                                '=' => (a == b) as i128,
+                                '>' => (a > b) as i128,
+                                '<' => (a < b) as i128,
                                 _ => panic!("thinking face")
                             }
                         );
@@ -238,8 +242,12 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                     Some(c) => {
                         match functions.get(&ID(c as u32)) {
                             Some(entry) => {
-                                env.push(Frame{ret_addr: eip, stack: Vec::new()});
-                                eip = entry.ip
+                                let mut v = Vec::new();
+                                let e = &entry.env;
+                                v.extend(e.iter().cloned());
+                                env.push(Frame{ret_addr: eip, stack: Vec::new(), env: v});
+                                eip = (&entry).ip;
+                                current_scope = e;
                             },
                             None => {
                                 panic!("No such function: {} @ {}", c, old_eip.to_usize());
@@ -248,6 +256,29 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                     },
                     None => {
                         panic!("Stack is Empty @ {}", old_eip.to_usize());
+                    }
+                }
+            },
+            'b' => {
+                match (stack.pop(), stack.pop(), stack.pop()) {
+                    (Some(a), Some(b), Some(c)) => {
+                        let x = if c == 0{ b } else { a };
+                        match functions.get(&ID(x as u32)) {
+                            Some(entry) => {
+                                let mut v = Vec::new();
+                                let e = &entry.env;
+                                v.extend(e.iter().cloned());
+                                env.push(Frame{ret_addr: eip, stack: Vec::new(), env: v});
+                                eip = (&entry).ip;
+                                current_scope = e;
+                            },
+                            None => {
+                                panic!("No such function: {} @ {}", c, old_eip.to_usize());
+                            }
+                        }
+                    },
+                    _ => {
+                        panic!("Stack size is smaller than 3 @ {}", old_eip.to_usize());
                     }
                 }
             },
