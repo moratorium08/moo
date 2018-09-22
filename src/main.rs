@@ -27,8 +27,8 @@ impl IP {
     }
 }
 
-fn to_v(c: char) -> i128 {
-    ((c as u8) - ('0' as u8)) as i128
+fn to_v(c: char) -> i64 {
+    ((c as u8) - ('0' as u8)) as i64
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -37,7 +37,7 @@ pub struct FuncName(u32);
 #[derive(Debug)]
 pub struct Frame {
     pub ret_addr: IP,
-    pub stack: Vec<i128>,
+    pub stack: Vec<i64>,
     pub env: Vec<ID>,
 }
 
@@ -64,7 +64,7 @@ fn initialize() {}
 
 fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
     let mut eip = IP(0);
-    let mut stack: Vec<i128> = Vec::new();
+    let mut stack: Vec<i64> = Vec::new();
     let mut env = Vec::new();
     let mut num_state = false;
 
@@ -197,9 +197,9 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                                 '-' => a - b,
                                 '*' => a * b,
                                 '/' => a / b,
-                                '=' => (a == b) as i128,
-                                '>' => (a > b) as i128,
-                                '<' => (a < b) as i128,
+                                '=' => (a == b) as i64,
+                                '>' => (a > b) as i64,
+                                '<' => (a < b) as i64,
                                 _ => panic!("thinking face")
                             }
                         );
@@ -212,7 +212,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
             'i' => {
                 match std::io::stdin().bytes().next() {
                     Some(Ok(c)) => {
-                        stack.push(c as i128);
+                        stack.push(c as i64);
                     },
                     _ => {
                         panic!("stdin is closed @ {}", old_eip.to_usize());
