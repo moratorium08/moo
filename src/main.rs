@@ -3,49 +3,80 @@ use std::vec::Vec;
 use std::fs;
 use std::io::Read;
 use std::collections::HashMap;
+use std::cell::RefCell;
 use std::str::Chars;
 
 
 // TODO: ちゃんとパーサーを書く
 
 // Instruction Pointer
-pub struct Ip(u32);
+#[derive(Copy, Clone, Debug)]
+pub struct IP(u32);
+#[derive(Copy, Clone, Debug)]
+pub struct FuncName(u32);
 
+#[derive(Debug)]
 pub struct Frame<'a> {
-    retaddr: Ip,
+    retaddr: IP,
     env: Env<'a>,
 }
 
+#[derive(Debug)]
 pub struct Env<'a> {
     stack: Vec<u8>,
-    funcitons: HashMap<&'a str, Ip>,
+    functions: HashMap<&'a str, IP>,
 }
 
-pub struct Function<'a> {
-    env: Vec<&'a mut Function<'a>>,
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ID(u32);
+
+#[derive(Debug)]
+pub struct Function {
+    env: Vec<ID>,
+    ip: IP,
+    name: FuncName,
+    id: ID,
+}
+
+impl Function {
+    pub fn new(env: Vec<ID>, ip: IP, name: FuncName, id: ID) -> Function {
+        let f = Function { env, ip, name, id };
+        f
+    }
 }
 
 fn initialize() {}
 
 fn run(code: &str) {}
 
-fn collect_functions(code: &str) -> Vec<&mut Function> {
+fn collect_functions(code: &str) -> HashMap<ID, Function> {
     let mut val = 0u32;
-    let mut status = false;
-    let mut ret: Vec<&mut Function> = Vec::new();
+    let mut env = Vec::new();
+    let mut ret = HashMap::new();
+
+    let mut id = 0u32;
 
     for (i, c) in code.chars().enumerate() {
         match c {
-            '{' =>  {
-
-            },
+            '{' => {
+                let mut v = Vec::new();
+                v.extend(env.iter().cloned());
+                let mut fun = Function::new(v, IP(i as u32), FuncName(val), ID(id));
+                env.push(ID(id));
+                ret.insert(ID(id), fun);
+                id += 1;
+                val = 0;
+            }
             '}' => {
-
-            },
+                env.pop();
+                val = 0;
+            }
             '0'...'9' => {
-
-            },
-            _ => {},
+                val = val * 10 + ((c as u8) - ('0' as u8)) as u32;
+            }
+            _ => {
+                val = 0;
+            }
         }
     }
     ret
@@ -55,19 +86,35 @@ fn collect_functions(code: &str) -> Vec<&mut Function> {
 // checks parenthesis.
 fn code_check(code: &str) -> bool {
     let mut val = 0;
+    let mut name = 0u32;
+    let mut status = false;
+
     for (i, c) in code.chars().enumerate() {
         match c {
-            '{' =>  {
+            '{' => {
+                if !status {
+                    println!("Syntax Error: function must have its name. at {}", i)
+                }
+                status = false;
+                name = 0;
                 val += 1;
-            },
+            }
             '}' => {
                 val -= 1;
+                name = 0;
                 if val < 0 {
                     println!("Syntax Error: Illegal close parenthesis at {}", i);
                     return false;
                 }
-            },
-            _ => {},
+            }
+            '0'...'9' => {
+                status = true;
+                name = name * 10 + ((c as u8) - ('0' as u8)) as u32;
+            }
+            _ => {
+                status = false;
+                name = 0;
+            }
         }
     }
     if val == 0 {
@@ -89,7 +136,7 @@ fn main() {
 
     let mut f = match fs::File::open(name) {
         Ok(f) => f,
-        Err(E) => {
+        Err(_) => {
             println!("Failed to open file");
             return;
         }
