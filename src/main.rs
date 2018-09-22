@@ -80,12 +80,15 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
         let n = env.len();
         let inst = code[eip.to_usize()] as char;
 
+        /*
         print!("eip {:?}. size {}: ", eip, stack.len());
         for c in stack.iter() {
             print!("{} ", c);
         }
         println!();
+        */
         let old_eip = eip;
+        let old_num_state = num_state;
         num_state = false;
         eip.next();
         match inst {
@@ -115,8 +118,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                 env.pop();
             },
             '0'...'9' => {
-                let frame: &mut Frame = &mut env[n - 1];
-                if (num_state) {
+                if old_num_state {
                     match stack.pop() {
                         Some(x) => {
                             stack.push(x * 10 + to_v(inst));
