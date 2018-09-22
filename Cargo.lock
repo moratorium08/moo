@@ -30,6 +30,7 @@ dependencies = [
 name = "stst"
 version = "0.1.0"
 dependencies = [
+ "libc 0.2.43 (registry+https://github.com/rust-lang/crates.io-index)",
  "nom 4.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

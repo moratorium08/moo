@@ -1,3 +1,4 @@
+extern crate libc;
 use std::env;
 use std::vec::Vec;
 use std::fs;
@@ -5,6 +6,7 @@ use std::io::Read;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::str::Chars;
+use libc::getchar;
 
 
 // TODO: ちゃんとパーサーを書く
@@ -25,8 +27,8 @@ impl IP {
     }
 }
 
-fn to_v(c: char) -> u128 {
-    ((c as u8) - ('0' as u8)) as u128
+fn to_v(c: char) -> i128 {
+    ((c as u8) - ('0' as u8)) as i128
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -35,7 +37,7 @@ pub struct FuncName(u32);
 #[derive(Debug)]
 pub struct Frame {
     pub ret_addr: IP,
-    pub stack: Vec<u128>,
+    pub stack: Vec<i128>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -59,13 +61,15 @@ impl Function {
 fn initialize() {}
 
 
-fn run(code: &[u8], functions: HashMap<ID, Function>) {
+fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
     let mut eip = IP(0);
-    let mut stack: Vec<u128> = Vec::new();
+    let mut stack: Vec<i128> = Vec::new();
     let mut env = Vec::new();
     let mut num_state = false;
 
     env.push(Frame{ret_addr: IP(0), stack: Vec::new()});
+
+    let mut current_scope = &global;
 
     loop {
         if eip.to_usize() >= code.len() {
@@ -74,7 +78,6 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
         assert!(env.len() > 0);
         let n = env.len();
         let inst = code[eip.to_usize()] as char;
-        let frame: &mut Frame = &mut env[n - 1];
 
         print!("eip {:?}. size {}: ", eip, stack.len());
         for c in stack.iter() {
@@ -86,6 +89,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
         eip.next();
         match inst {
             '{' => {
+                let frame: &mut Frame = &mut env[n - 1];
                 stack.pop();
                 let mut val = 1;
                 for (i, c) in code[old_eip.to_usize()..].iter().enumerate() {
@@ -105,7 +109,12 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
                 }
 
             },
+            '}' => {
+                eip = env[n - 1].ret_addr;
+                env.pop();
+            },
             '0'...'9' => {
+                let frame: &mut Frame = &mut env[n - 1];
                 if (num_state) {
                     match stack.pop() {
                         Some(x) => {
@@ -125,7 +134,8 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
             't' => {
                 stack.pop();
             },
-            '>' => {
+            ')' => {
+                let frame: &mut Frame = &mut env[n - 1];
                 match stack.pop() {
                     Some(x) => {
                         frame.stack.push(x);
@@ -135,7 +145,8 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
                     }
                 }
             },
-            '<' => {
+            '(' => {
+                let frame: &mut Frame = &mut env[n - 1];
                 match frame.stack.pop() {
                     Some(x) => {
                         stack.push(x);
@@ -146,6 +157,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
                 }
             },
             'a' => {
+                let frame: &mut Frame = &mut env[n - 1];
                 while let Some(x) = frame.stack.pop() {
                     stack.push(x);
                 }
@@ -158,7 +170,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
                         stack.push(a);
                     },
                     _ => {
-                        panic!("Stack size is smalle than 3");
+                        panic!("Stack size is smaller than 3 @ {}", old_eip.to_usize());
                     }
                 }
             },
@@ -169,7 +181,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
                         stack.push(a);
                     },
                     _ => {
-                        panic!("Stack size is smalle than 3");
+                        panic!("Stack size is smaller than 2 @ {}", old_eip.to_usize());
                     }
                 }
             },
@@ -187,7 +199,55 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
                         );
                     },
                     _ => {
-                        panic!("Stack size is smalle than 3");
+                        panic!("Stack size is smaller than 2 @ {}", old_eip.to_usize());
+                    }
+                }
+            },
+            'i' => {
+                match std::io::stdin().bytes().next() {
+                    Some(Ok(c)) => {
+                        stack.push(c as i128);
+                    },
+                    _ => {
+                        panic!("stdin is closed @ {}", old_eip.to_usize());
+                    }
+                }
+            },
+            'o' => {
+                match stack.pop() {
+                    Some(c) => {
+                        print!("{}", ((c % 256) as u8) as char);
+                    },
+                    None => {
+                        panic!("Stack is Empty @ {}", old_eip.to_usize());;
+                    }
+                }
+            },
+            'n' => {
+                match stack.pop() {
+                    Some(c) => {
+                        print!("{}", c);
+                    },
+                    None => {
+                        panic!("Stack is Empty @ {}", old_eip.to_usize());;
+                    }
+                }
+            },
+            'c' => {
+                match stack.pop() {
+                    Some(c) => {
+                        match functions.get(&ID(c as u32)) {
+                            Some(entry) => {
+                                env.push(Frame{ret_addr: eip, stack: Vec::new()});
+                                eip = entry.ip
+                            },
+                            None => {
+                                panic!("No such function: {} @ {}", c, old_eip.to_usize());
+                            }
+                        }
+                    },
+                    None => {
+                        panic!("Stack is Empty @ {}", old_eip.to_usize());
                     }
                 }
             },
@@ -197,25 +257,34 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
     }
 }
 
-fn collect_functions(code: &str) -> HashMap<ID, Function> {
+fn collect_functions(code: &str) -> (HashMap<ID, Function>, Vec<ID>) {
     let mut val = 0u32;
     let mut env = Vec::new();
     let mut ret = HashMap::new();
 
     let mut id = 0u32;
 
+    let mut nest = 0;
+
+    env.push(Vec::new());
     for (i, c) in code.chars().enumerate() {
         match c {
             '{' => {
+                let n = env.len();
+                env[n - 1].push(ID(id));
                 let mut v = Vec::new();
-                v.extend(env.iter().cloned());
-                env.push(ID(id));
+                for e in env.iter() {
+                    v.extend(e.iter().cloned());
+                }
                 let mut fun = Function::new(v, IP(i as u32), FuncName(val), ID(id));
                 ret.insert(ID(id), fun);
+                env.push(Vec::new());
                 id += 1;
                 val = 0;
-            }
+                nest += 1;
+            },
             '}' => {
+                nest -= 1;
                 env.pop();
                 val = 0;
             },
@@ -227,7 +296,7 @@ fn collect_functions(code: &str) -> HashMap<ID, Function> {
             }
         }
     }
-    ret
+    (ret, env.pop().unwrap())
 }
 
 // code check
@@ -297,7 +366,7 @@ fn main() {
     if !code_check(&code) {
         return;
     }
-    let functions = collect_functions(&code);
+    let (functions, global) = collect_functions(&code);
     let bcode = code.as_bytes();
-    run(bcode, functions);
+    run(bcode, functions, global);
 }
