@@ -27,6 +27,39 @@ impl IP {
     }
 }
 
+#[derive(Debug)]
+pub enum Value {
+    Int(i64),
+    List(Vec<Value>),
+}
+
+impl Value {
+    fn print_inner(&self, val: bool) {
+        match self {
+            Value::Int(c) =>
+            if val {
+                print!("{}", c);
+            } else {
+                print!("{}", ((c % 256) as u8) as char);
+            },
+            Value::List(l) => {
+                print!("[");
+                for v in l.iter() {
+                    v.print();
+                    print!(",");
+                }
+                print!("]");
+            }
+        }
+    }
+    pub fn print_val(&self) {
+        self.print_inner(true);
+    }
+    pub fn print(&self) {
+        self.print_inner(false);
+    }
+}
+
 fn to_v(c: char) -> i64 {
     ((c as u8) - ('0' as u8)) as i64
 }
@@ -37,7 +70,7 @@ pub struct FuncName(u32);
 #[derive(Debug)]
 pub struct Frame {
     pub ret_addr: IP,
-    pub stack: Vec<i64>,
+    pub stack: Vec<Value>,
     pub env: Vec<ID>,
 }
 
@@ -64,7 +97,7 @@ fn initialize() {}
 
 fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
     let mut eip = IP(0);
-    let mut stack: Vec<i64> = Vec::new();
+    let mut stack: Vec<Value> = Vec::new();
     let mut env = Vec::new();
     let mut num_state = false;
 
@@ -120,17 +153,16 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
             '0'...'9' => {
                 if old_num_state {
                     match stack.pop() {
-                        Some(x) => {
-                            stack.push(x * 10 + to_v(inst));
+                        Some(Value::Int(x)) => {
+                            stack.push(Value::Int(x * 10 + to_v(inst)));
                             num_state = true;
                         },
-                        None => {
-                            stack.push(0);
-                            num_state = true;
+                        _ => {
+                            panic!("something seems wrong.")
                         }
                     }
                 } else {
-                    stack.push(to_v(inst));
+                    stack.push(Value::Int(to_v(inst)));
                     num_state = true;
                 }
             },
@@ -191,18 +223,33 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
             '+' | '-' | '*' | '/' | '>' | '<' | '=' => {
                 match (stack.pop(), stack.pop()) {
                     (Some(a), Some(b)) => {
-                        stack.push(
-                            match inst {
-                                '+' => a + b,
-                                '-' => a - b,
-                                '*' => a * b,
-                                '/' => a / b,
-                                '=' => (a == b) as i64,
-                                '>' => (a > b) as i64,
-                                '<' => (a < b) as i64,
-                                _ => panic!("thinking face")
+                        match (a, b) {
+                            (Value::Int(a), Value::Int(b)) => {
+                                stack.push(Value::Int(
+                                    match inst {
+                                        '+' => a + b,
+                                        '-' => a - b,
+                                        '*' => a * b,
+                                        '/' => a / b,
+                                        '=' => (a == b) as i64,
+                                        '>' => (a > b) as i64,
+                                        '<' => (a < b) as i64,
+                                        _ => panic!("thinking face")
+                                    }
+                                ));
+                            },
+                            (Value::List(mut a), Value::List(b)) => {
+                                if inst == '+' {
+                                    a.extend(b);
+                                    stack.push(Value::List(a));
+                                } else {
+                                    panic!("{} is not supported to List @ {}", inst, old_eip.to_usize());
+                                }
+                            },
+                            _ => {
+                                panic!("type match error");
                             }
-                        );
+                        }
                     },
                     _ => {
                         panic!("Stack size is smaller than 2 @ {}", old_eip.to_usize());
@@ -212,7 +259,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
             'i' => {
                 match std::io::stdin().bytes().next() {
                     Some(Ok(c)) => {
-                        stack.push(c as i64);
+                        stack.push(Value::Int(c as i64));
                     },
                     _ => {
                         panic!("stdin is closed @ {}", old_eip.to_usize());
@@ -221,8 +268,8 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
             },
             'o' => {
                 match stack.pop() {
-                    Some(c) => {
-                        print!("{}", ((c % 256) as u8) as char);
+                    Some(v) => {
+                        v.print();
                     },
                     None => {
                         panic!("Stack is Empty @ {}", old_eip.to_usize());;
@@ -231,8 +278,8 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
             },
             'n' => {
                 match stack.pop() {
-                    Some(c) => {
-                        print!("{}", c);
+                    Some(v) => {
+                        v.print_val();
                     },
                     None => {
                         panic!("Stack is Empty @ {}", old_eip.to_usize());;
@@ -241,7 +288,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
             },
             'c' => {
                 match stack.pop() {
-                    Some(c) => {
+                    Some(Value::Int(c)) => {
                         match functions.get(&ID(c as u32)) {
                             Some(entry) => {
                                 let mut v = Vec::new();
@@ -252,9 +299,12 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                                 current_scope = e;
                             },
                             None => {
-                                panic!("No such function: {} @ {}", c, old_eip.to_usize());
+                                panic!("No such function: {} @ {}", inst, old_eip.to_usize());
                             }
                         }
+                    },
+                    Some(Value::List(c)) => {
+                        panic!("List is not supported @ {}", old_eip.to_usize());
                     },
                     None => {
                         panic!("Stack is Empty @ {}", old_eip.to_usize());
@@ -263,8 +313,8 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
             },
             'b' => {
                 match (stack.pop(), stack.pop(), stack.pop()) {
-                    (Some(a), Some(b), Some(c)) => {
-                        let x = if c == 0{ b } else { a };
+                    (Some(Value::Int(a)), Some(Value::Int(b)), Some(Value::Int(c))) => {
+                        let x = if c == 0 { b } else { a };
                         match functions.get(&ID(x as u32)) {
                             Some(entry) => {
                                 let mut v = Vec::new();
@@ -275,7 +325,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                                 current_scope = e;
                             },
                             None => {
-                                panic!("No such function: {} @ {}", c, old_eip.to_usize());
+                                panic!("No such function: {} @ {}", inst, old_eip.to_usize());
                             }
                         }
                     },
