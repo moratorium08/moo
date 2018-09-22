@@ -12,19 +12,30 @@ use std::str::Chars;
 // Instruction Pointer
 #[derive(Copy, Clone, Debug)]
 pub struct IP(u32);
+
+impl IP {
+    fn next(&mut self) {
+        let &mut IP(v) = self;
+        *self = IP(v + 1);
+    }
+
+    fn to_usize(&self) -> usize {
+        let IP(v) = *self;
+        v as usize
+    }
+}
+
+fn to_v(c: char) -> u128 {
+    ((c as u8) - ('0' as u8)) as u128
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct FuncName(u32);
 
 #[derive(Debug)]
-pub struct Frame<'a> {
-    retaddr: IP,
-    env: Env<'a>,
-}
-
-#[derive(Debug)]
-pub struct Env<'a> {
-    stack: Vec<u8>,
-    functions: HashMap<&'a str, IP>,
+pub struct Frame {
+    pub ret_addr: IP,
+    pub stack: Vec<u128>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -47,7 +58,76 @@ impl Function {
 
 fn initialize() {}
 
-fn run(code: &str) {}
+
+fn run(code: &[u8], functions: HashMap<ID, Function>) {
+    let mut eip = IP(0);
+    let mut stack: Vec<u128> = Vec::new();
+    let mut env = Vec::new();
+    let mut num_state = false;
+
+    env.push(Frame{ret_addr: IP(0), stack: Vec::new()});
+
+    loop {
+        if eip.to_usize() >= code.len() {
+            return;
+        }
+        assert!(env.len() > 0);
+        let n = env.len();
+        let inst = code[eip.to_usize()] as char;
+        let frame: &mut Frame = &mut env[n - 1];
+
+        print!("eip {:?}. size {}: ", eip, frame.stack.len());
+        for c in frame.stack.iter() {
+            print!("{} ", c);
+        }
+        println!();
+        match inst {
+            '{' => {
+                frame.stack.pop();
+                let mut val = 1;
+                for (i, c) in code[eip.to_usize()..].iter().enumerate() {
+                    match *c as char {
+                        '{' => {
+                            val += 1;
+                        },
+                        '}' =>  {
+                            val -= 1;
+                            if val == 0 {
+                                eip = IP((i + 1) as u32);
+                                break;
+                            }
+                        },
+                        _ => {},
+                    }
+                }
+
+                num_state = false;
+                eip.next();
+            },
+            '0'...'9' => {
+                if (num_state) {
+                    match frame.stack.pop() {
+                        Some(x) => {
+                            frame.stack.push(x * 10 + to_v(inst));
+                        },
+                        None => {
+                            frame.stack.push(0);
+                        }
+                    }
+                } else {
+                    frame.stack.push(to_v(inst));
+                    num_state = true;
+                }
+                eip.next();
+            },
+            _ =>  {
+                num_state = false;
+                eip.next();
+            }
+
+        }
+    }
+}
 
 fn collect_functions(code: &str) -> HashMap<ID, Function> {
     let mut val = 0u32;
@@ -61,8 +141,8 @@ fn collect_functions(code: &str) -> HashMap<ID, Function> {
             '{' => {
                 let mut v = Vec::new();
                 v.extend(env.iter().cloned());
-                let mut fun = Function::new(v, IP(i as u32), FuncName(val), ID(id));
                 env.push(ID(id));
+                let mut fun = Function::new(v, IP(i as u32), FuncName(val), ID(id));
                 ret.insert(ID(id), fun);
                 id += 1;
                 val = 0;
@@ -72,7 +152,7 @@ fn collect_functions(code: &str) -> HashMap<ID, Function> {
                 val = 0;
             }
             '0'...'9' => {
-                val = val * 10 + ((c as u8) - ('0' as u8)) as u32;
+                val = val * 10 + to_v(c) as u32;
             }
             _ => {
                 val = 0;
@@ -109,7 +189,7 @@ fn code_check(code: &str) -> bool {
             }
             '0'...'9' => {
                 status = true;
-                name = name * 10 + ((c as u8) - ('0' as u8)) as u32;
+                name = name * 10 + to_v(c) as u32;
             }
             _ => {
                 status = false;
@@ -149,5 +229,7 @@ fn main() {
     if !code_check(&code) {
         return;
     }
-    run(&code);
+    let functions = collect_functions(&code);
+    let bcode = code.as_bytes();
+    run(bcode, functions);
 }
