@@ -103,7 +103,6 @@ impl Function {
         f
     }
     pub fn search_by_id(fs: &Vec<(ID, ID)>, id: &ID) -> Option<ID> {
-        println!("{:?}", fs);
         for (n, r) in fs.iter() {
             if n == id {
                 return Some(*r);
@@ -143,10 +142,6 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
                 print!(" ");
             }
             println!();
-        }
-
-        if stack.len() > 5 {
-            break;
         }
 
         let old_eip = eip;
