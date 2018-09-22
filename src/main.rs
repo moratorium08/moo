@@ -76,16 +76,19 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
         let inst = code[eip.to_usize()] as char;
         let frame: &mut Frame = &mut env[n - 1];
 
-        print!("eip {:?}. size {}: ", eip, frame.stack.len());
-        for c in frame.stack.iter() {
+        print!("eip {:?}. size {}: ", eip, stack.len());
+        for c in stack.iter() {
             print!("{} ", c);
         }
         println!();
+        let old_eip = eip;
+        num_state = false;
+        eip.next();
         match inst {
             '{' => {
-                frame.stack.pop();
+                stack.pop();
                 let mut val = 1;
-                for (i, c) in code[eip.to_usize()..].iter().enumerate() {
+                for (i, c) in code[old_eip.to_usize()..].iter().enumerate() {
                     match *c as char {
                         '{' => {
                             val += 1;
@@ -101,30 +104,95 @@ fn run(code: &[u8], functions: HashMap<ID, Function>) {
                     }
                 }
 
-                num_state = false;
-                eip.next();
             },
             '0'...'9' => {
                 if (num_state) {
-                    match frame.stack.pop() {
+                    match stack.pop() {
                         Some(x) => {
-                            frame.stack.push(x * 10 + to_v(inst));
+                            stack.push(x * 10 + to_v(inst));
+                            num_state = true;
                         },
                         None => {
-                            frame.stack.push(0);
+                            stack.push(0);
+                            num_state = true;
                         }
                     }
                 } else {
-                    frame.stack.push(to_v(inst));
+                    stack.push(to_v(inst));
                     num_state = true;
                 }
-                eip.next();
+            },
+            't' => {
+                stack.pop();
+            },
+            '>' => {
+                match stack.pop() {
+                    Some(x) => {
+                        frame.stack.push(x);
+                    },
+                    None => {
+                        panic!("Stack is empty!");
+                    }
+                }
+            },
+            '<' => {
+                match frame.stack.pop() {
+                    Some(x) => {
+                        stack.push(x);
+                    },
+                    None => {
+                        panic!("Stack is empty!");
+                    }
+                }
+            },
+            'a' => {
+                while let Some(x) = frame.stack.pop() {
+                    stack.push(x);
+                }
+            },
+            'r' => {
+                match (stack.pop(), stack.pop(), stack.pop()) {
+                    (Some(a), Some(b), Some(c)) => {
+                        stack.push(b);
+                        stack.push(c);
+                        stack.push(a);
+                    },
+                    _ => {
+                        panic!("Stack size is smalle than 3");
+                    }
+                }
+            },
+            's' => {
+                match (stack.pop(), stack.pop()) {
+                    (Some(a), Some(b)) => {
+                        stack.push(b);
+                        stack.push(a);
+                    },
+                    _ => {
+                        panic!("Stack size is smalle than 3");
+                    }
+                }
+            },
+            '+' | '-' | '*' | '/' => {
+                match (stack.pop(), stack.pop()) {
+                    (Some(a), Some(b)) => {
+                        stack.push(
+                            match inst {
+                                '+' => a + b,
+                                '-' => a - b,
+                                '*' => a * b,
+                                '/' => a / b,
+                                _ => panic!("thinking face")
+                            }
+                        );
+                    },
+                    _ => {
+                        panic!("Stack size is smalle than 3");
+                    }
+                }
             },
             _ =>  {
-                num_state = false;
-                eip.next();
             }
-
         }
     }
 }
@@ -150,7 +218,7 @@ fn collect_functions(code: &str) -> HashMap<ID, Function> {
             '}' => {
                 env.pop();
                 val = 0;
-            }
+            },
             '0'...'9' => {
                 val = val * 10 + to_v(c) as u32;
             }
