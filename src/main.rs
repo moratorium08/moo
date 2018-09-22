@@ -80,10 +80,10 @@ fn to_v(c: char) -> i64 {
 pub struct FuncName(u32);
 
 #[derive(Debug)]
-pub struct Frame {
+pub struct Frame<'a> {
     pub ret_addr: IP,
     pub stack: Vec<Value>,
-    pub env: Vec<(ID, ID)>,
+    pub env: &'a Vec<(ID, ID)>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -123,7 +123,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
     let mut env = Vec::new();
     let mut num_state = false;
 
-    env.push(Frame{ret_addr: IP(0), stack: Vec::new(), env: Vec::new()});
+    env.push(Frame{ret_addr: IP(0), stack: Vec::new(), env: &global});
 
     let mut current_scope = &global;
 
@@ -136,7 +136,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
         let n = env.len();
         let inst = code[eip.to_usize()] as char;
 
-        if true {
+        if false {
             print!("eip {:?}. size {}: ", eip, stack.len());
             for c in stack.iter() {
                 c.print_val();
@@ -182,6 +182,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
             '}' => {
                 eip = env[n - 1].ret_addr;
                 env.pop();
+                current_scope = &env[n - 2].env;
             },
             '0'...'9' => {
                 if old_num_state {
@@ -342,8 +343,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
                             Some(entry) => {
                                 let mut v: Vec<(ID, ID)> = Vec::new();
                                 let e = &entry.env;
-                                v.extend(e.iter().cloned());
-                                env.push(Frame{ret_addr: eip, stack: Vec::new(), env: v});
+                                env.push(Frame{ret_addr: eip, stack: Vec::new(), env: current_scope});
                                 eip = (&entry).ip;
                                 eip.next(); // increment
                                 current_scope = e;
@@ -367,10 +367,8 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
                         let x = if c == 0 { b } else { a };
                         match functions.get(&ID(x as u32)) {
                             Some(entry) => {
-                                let mut v = Vec::new();
                                 let e = &entry.env;
-                                v.extend(e.iter().cloned());
-                                env.push(Frame{ret_addr: eip, stack: Vec::new(), env: v});
+                                env.push(Frame{ret_addr: eip, stack: Vec::new(), env: current_scope});
                                 eip = (&entry).ip;
                                 eip.next();
                                 current_scope = e;
