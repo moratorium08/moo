@@ -58,6 +58,18 @@ impl Value {
     pub fn print(&self) {
         self.print_inner(false);
     }
+    pub fn clone(&self) -> Value {
+        match &self {
+            Value::Int(ref x) => Value::Int(*x),
+            Value::List(ref l) => {
+                let mut v = Vec::new();
+                for x in l.iter() {
+                    v.push(x.clone());
+                }
+                Value::List(v)
+            }
+        }
+    }
 }
 
 fn to_v(c: char) -> i64 {
@@ -109,17 +121,24 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
         if eip.to_usize() >= code.len() {
             return;
         }
+
         assert!(env.len() > 0);
         let n = env.len();
         let inst = code[eip.to_usize()] as char;
 
-        /*
-        print!("eip {:?}. size {}: ", eip, stack.len());
-        for c in stack.iter() {
-            print!("{} ", c);
+        if false {
+            print!("eip {:?}. size {}: ", eip, stack.len());
+            for c in stack.iter() {
+                c.print_val();
+                print!(" ");
+            }
+            println!();
         }
-        println!();
-        */
+
+        if stack.len() > 5 {
+            break;
+        }
+
         let old_eip = eip;
         let old_num_state = num_state;
         num_state = false;
@@ -129,22 +148,26 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                 let frame: &mut Frame = &mut env[n - 1];
                 stack.pop();
                 let mut val = 1;
-                for (i, c) in code[old_eip.to_usize()..].iter().enumerate() {
+                let mut done = false;
+                for (i, c) in code[old_eip.to_usize() + 1..].iter().enumerate() {
+                    if done {
+                        break;
+                    }
                     match *c as char {
                         '{' => {
                             val += 1;
                         },
                         '}' =>  {
+                            let cnt = i + old_eip.to_usize() + 2;
                             val -= 1;
                             if val == 0 {
-                                eip = IP((i + 1) as u32);
-                                break;
+                                eip = IP(cnt as u32);
                             }
+                            done = true;
                         },
                         _ => {},
                     }
                 }
-
             },
             '}' => {
                 eip = env[n - 1].ret_addr;
@@ -212,11 +235,23 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
             's' => {
                 match (stack.pop(), stack.pop()) {
                     (Some(a), Some(b)) => {
-                        stack.push(b);
                         stack.push(a);
+                        stack.push(b);
                     },
                     _ => {
                         panic!("Stack size is smaller than 2 @ {}", old_eip.to_usize());
+                    }
+                }
+            },
+            'd' => {
+                match stack.pop() {
+                    Some(v) => {
+                        let w = (&v).clone();
+                        stack.push(v);
+                        stack.push(w);
+                    },
+                    None => {
+                        panic!("Stack is Empty");
                     }
                 }
             },
@@ -296,6 +331,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                                 v.extend(e.iter().cloned());
                                 env.push(Frame{ret_addr: eip, stack: Vec::new(), env: v});
                                 eip = (&entry).ip;
+                                eip.next(); // increment
                                 current_scope = e;
                             },
                             None => {
@@ -322,6 +358,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                                 v.extend(e.iter().cloned());
                                 env.push(Frame{ret_addr: eip, stack: Vec::new(), env: v});
                                 eip = (&entry).ip;
+                                eip.next();
                                 current_scope = e;
                             },
                             None => {
@@ -333,6 +370,23 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
                         panic!("Stack size is smaller than 3 @ {}", old_eip.to_usize());
                     }
                 }
+            },
+            'l' => {
+                stack.push(Value::List(Vec::new()));
+            },
+            'p' => {
+                match (stack.pop(), stack.pop()) {
+                    (Some(a), Some(Value::List(mut b))) => {
+                        b.push(a);
+                        stack.push(Value::List(b));
+                    },
+                    _ => {
+                        panic!("Stack size is smaller than 2 @ {}", old_eip.to_usize());
+                    }
+                }
+            },
+            'e' => {
+                println!();
             },
             _ =>  {
             }
