@@ -83,7 +83,7 @@ pub struct FuncName(u32);
 pub struct Frame {
     pub ret_addr: IP,
     pub stack: Vec<Value>,
-    pub env: Vec<ID>,
+    pub env: Vec<(ID, ID)>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -91,23 +91,33 @@ pub struct ID(u32);
 
 #[derive(Debug)]
 pub struct Function {
-    env: Vec<ID>,
+    env: Vec<(ID, ID)>,
     ip: IP,
     name: FuncName,
     id: ID,
 }
 
 impl Function {
-    pub fn new(env: Vec<ID>, ip: IP, name: FuncName, id: ID) -> Function {
+    pub fn new(env: Vec<(ID, ID)>, ip: IP, name: FuncName, id: ID) -> Function {
         let f = Function { env, ip, name, id };
         f
     }
+    pub fn search_by_id(fs: &Vec<(ID, ID)>, id: &ID) -> Option<ID> {
+        println!("{:?}", fs);
+        for (n, r) in fs.iter() {
+            if n == id {
+                return Some(*r);
+            }
+        }
+        None
+    }
 }
+
 
 fn initialize() {}
 
 
-fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
+fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
     let mut eip = IP(0);
     let mut stack: Vec<Value> = Vec::new();
     let mut env = Vec::new();
@@ -126,7 +136,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
         let n = env.len();
         let inst = code[eip.to_usize()] as char;
 
-        if false {
+        if true {
             print!("eip {:?}. size {}: ", eip, stack.len());
             for c in stack.iter() {
                 c.print_val();
@@ -324,9 +334,13 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
             'c' => {
                 match stack.pop() {
                     Some(Value::Int(c)) => {
-                        match functions.get(&ID(c as u32)) {
+                        let id = match Function::search_by_id(current_scope, &ID(c as u32)) {
+                            Some(idx) => idx,
+                            None => panic!("No such function {} in the current scope @ {}", c, old_eip.to_usize()),
+                        };
+                        match functions.get(&id) {
                             Some(entry) => {
-                                let mut v = Vec::new();
+                                let mut v: Vec<(ID, ID)> = Vec::new();
                                 let e = &entry.env;
                                 v.extend(e.iter().cloned());
                                 env.push(Frame{ret_addr: eip, stack: Vec::new(), env: v});
@@ -394,7 +408,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<ID>) {
     }
 }
 
-fn collect_functions(code: &str) -> (HashMap<ID, Function>, Vec<ID>) {
+fn collect_functions(code: &str) -> (HashMap<ID, Function>, Vec<(ID, ID)>) {
     let mut val = 0u32;
     let mut env = Vec::new();
     let mut ret = HashMap::new();
@@ -408,7 +422,7 @@ fn collect_functions(code: &str) -> (HashMap<ID, Function>, Vec<ID>) {
         match c {
             '{' => {
                 let n = env.len();
-                env[n - 1].push(ID(id));
+                env[n - 1].push((ID(val), ID(id)));
                 let mut v = Vec::new();
                 for e in env.iter() {
                     v.extend(e.iter().cloned());
