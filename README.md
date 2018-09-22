@@ -1,3 +1,4 @@
+
 ## 概要
 
 golfっぽい使いやすさを多少考慮したesolang。妥協で作った。似た言語ありそう。適当に書いたので仕様どおりになっていなかったらごめんなさい
@@ -32,6 +33,7 @@ stackが2つあり、データ操作に使える。mainスタックは、関数�
 | a | sub stackのすべての要素をmain stackにpush allする |
 | r | main stackの先頭3つをrotateする |
 | s | main stackの先頭2つをswapする |
+| d | pop a; push a; push a |
 | + | pop a; pop b; push a + b |
 | - | pop a; pop b; push a - b |
 | * | pop a; pop b; push a * b |
@@ -43,13 +45,14 @@ stackが2つあり、データ操作に使える。mainスタックは、関数�
 | > | pop a; pop b; if a > b then push 1 else push 0 |
 | < | pop a; pop b; if a < b then push 1 else push 0 |
 | = | pop a; pop b; if a = b then push 1 else push 0 |
-| b | pop a; pop b; pop c; if c != 0 then call a else call b |
+| b | pop a; pop b; pop c; if c == 0 then call b else call a |
 | 数字列 | 連続するできる限り長い数字をソースコードからとりその値をmain stackにpush |
+| e | 改行出力する |
 
 --- まだ ---
 
 | l | 空リストをpush |
 | p | pop x; pop l; l.append(x) |
-| f |  pop
+| f |  pop v; pop l; pop f; fold(f, l, v) （分かって）|
 | m | pop f; pop l; map(f, l) （分かって） (fは関数の名前）|
 
