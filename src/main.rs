@@ -33,6 +33,17 @@ pub enum Value {
     List(Vec<Value>),
 }
 
+#[derive(Debug)]
+pub struct Setting {
+    pub debug: bool,
+}
+
+impl Setting {
+    fn new() -> Setting {
+        Setting{debug: false}
+    }
+}
+
 impl Value {
     fn print_inner(&self, val: bool) {
         match self {
@@ -45,7 +56,7 @@ impl Value {
             Value::List(l) => {
                 print!("[");
                 for v in l.iter() {
-                    v.print();
+                    v.print_inner(val);
                     print!(",");
                 }
                 print!("]");
@@ -103,7 +114,7 @@ impl Function {
         f
     }
     pub fn search_by_id(fs: &Vec<(ID, ID)>, id: &ID) -> Option<ID> {
-        for (n, r) in fs.iter() {
+        for (n, r) in fs.iter().rev() {
             if n == id {
                 return Some(*r);
             }
@@ -116,7 +127,7 @@ impl Function {
 fn initialize() {}
 
 
-fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
+fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>, setting: Setting) {
     let mut eip = IP(0);
     let mut stack: Vec<Value> = Vec::new();
     let mut env = Vec::new();
@@ -135,7 +146,7 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
         let n = env.len();
         let inst = code[eip.to_usize()] as char;
 
-        if false {
+        if setting.debug {
             print!("eip {:?}. size {}: ", eip, stack.len());
             for c in stack.iter() {
                 c.print_val();
@@ -167,8 +178,8 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
                             val -= 1;
                             if val == 0 {
                                 eip = IP(cnt as u32);
+                                done = true;
                             }
-                            done = true;
                         },
                         _ => {},
                     }
@@ -357,10 +368,17 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
                 }
             },
             'b' => {
-                match (stack.pop(), stack.pop(), stack.pop()) {
+                let a = stack.pop();
+                let b = stack.pop();
+                let c = stack.pop();
+                match (a, b, c) {
                     (Some(Value::Int(a)), Some(Value::Int(b)), Some(Value::Int(c))) => {
                         let x = if c == 0 { b } else { a };
-                        match functions.get(&ID(x as u32)) {
+                        let id = match Function::search_by_id(current_scope, &ID(x as u32)) {
+                            Some(idx) => idx,
+                            None => panic!("No such function {} in the current scope @ {}", c, old_eip.to_usize()),
+                        };
+                        match functions.get(&id) {
                             Some(entry) => {
                                 let e = &entry.env;
                                 env.push(Frame{ret_addr: eip, stack: Vec::new(), env: current_scope});
@@ -395,6 +413,51 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>) {
             'e' => {
                 println!();
             },
+            '[' => {
+                match stack.pop() {
+                    Some(Value::List(mut l)) => {
+                        if l.len() == 0 {
+                            panic!("List len is 0");
+                        }
+                        let v = l[0].clone();
+                        l.remove(0);
+                        stack.push(Value::List(l));
+                        stack.push(v);
+                    },
+                    _ => {
+                        panic!("Stack top is not a list")
+                    }
+                }
+            },
+            ']' => {
+                match stack.pop() {
+                    Some(Value::List(mut l)) => {
+                        match l.pop() {
+                            Some(v) => {
+                                stack.push(Value::List(l));
+                                stack.push(v);
+                            }
+
+                            None => panic!("List len is 0"),
+                        }
+                    },
+                    _ => {
+                        panic!("Stack top is not a list")
+                    }
+                }
+            },
+            '_' => {
+                match stack.pop() {
+                    Some(Value::List(l)) => {
+                        let v = l.len();
+                        stack.push(Value::List(l));
+                        stack.push(Value::Int(v as i64));
+                    },
+                    _ => {
+                        panic!("Stack top is not a list")
+                    }
+                }
+            },
             _ =>  {
             }
         }
@@ -407,6 +470,7 @@ fn collect_functions(code: &str) -> (HashMap<ID, Function>, Vec<(ID, ID)>) {
     let mut ret = HashMap::new();
 
     let mut id = 0u32;
+    let mut memo = Vec::new();
 
     let mut nest = 0;
 
@@ -416,18 +480,22 @@ fn collect_functions(code: &str) -> (HashMap<ID, Function>, Vec<(ID, ID)>) {
             '{' => {
                 let n = env.len();
                 env[n - 1].push((ID(val), ID(id)));
-                let mut v = Vec::new();
-                for e in env.iter() {
-                    v.extend(e.iter().cloned());
-                }
-                let mut fun = Function::new(v, IP(i as u32), FuncName(val), ID(id));
+                let mut fun = Function::new(Vec::new(), IP(i as u32), FuncName(val), ID(id));
                 ret.insert(ID(id), fun);
+                memo.push(ID(id));
                 env.push(Vec::new());
                 id += 1;
                 val = 0;
                 nest += 1;
             },
             '}' => {
+                let mut v = Vec::new();
+                for e in env.iter() {
+                    v.extend(e.iter().cloned());
+                }
+                let id = memo.pop().unwrap();
+
+                ret.get_mut(&id).unwrap().env = v;
                 nest -= 1;
                 env.pop();
                 val = 0;
@@ -493,6 +561,17 @@ fn main() {
         return;
     }
 
+    let mut set = Setting::new();
+    if l.len() >= 3 {
+        for v in l.iter() {
+            match v as &str {
+                "d" => set.debug = true,
+                _ => {},
+            }
+        }
+
+    }
+
     let name = &l[1];
 
     let mut f = match fs::File::open(name) {
@@ -511,6 +590,11 @@ fn main() {
         return;
     }
     let (functions, global) = collect_functions(&code);
+    if set.debug {
+        for f in functions.iter() {
+            println!("{:?}", f);
+        }
+    }
     let bcode = code.as_bytes();
-    run(bcode, functions, global);
+    run(bcode, functions, global, set);
 }
