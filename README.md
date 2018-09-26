@@ -48,11 +48,9 @@ stackが2つあり、データ操作に使える。mainスタックは、関数�
 | b | pop a; pop b; pop c; if c == 0 then call b else call a |
 | 数字列 | 連続するできる限り長い数字をソースコードからとりその値をmain stackにpush |
 | e | 改行出力する |
-
---- まだ ---
-
 | l | 空リストをpush |
 | p | pop x; pop l; l.append(x) |
-| f |  pop v; pop l; pop f; fold(f, l, v) （分かって）|
-| m | pop f; pop l; map(f, l) （分かって） (fは関数の名前）|
+| f |  pop f; pop l; fmap(f, l) （分かって）|
+
+--- まだ ---
 
