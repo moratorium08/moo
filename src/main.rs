@@ -127,19 +127,19 @@ impl Function {
 fn initialize() {}
 
 
-fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>, setting: Setting) {
-    let mut eip = IP(0);
-    let mut stack: Vec<Value> = Vec::new();
+fn run(code: &[u8], functions: & HashMap<ID, Function>, global: & Vec<(ID, ID)>, setting: &Setting, stack: &mut Vec<Value>, entry_point: IP) -> Option<Value> {
+    let mut eip = entry_point;
     let mut env = Vec::new();
     let mut num_state = false;
 
-    env.push(Frame{ret_addr: IP(0), stack: Vec::new(), env: &global});
+    // u32 maxの長さがあるとだめです
+    env.push(Frame{ret_addr: IP(u32::max_value()), stack: Vec::new(), env: &global});
 
-    let mut current_scope = &global;
+    let mut current_scope = global;
 
     loop {
         if eip.to_usize() >= code.len() {
-            return;
+            return stack.pop();
         }
 
         assert!(env.len() > 0);
@@ -188,7 +188,11 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>, set
             '}' => {
                 eip = env[n - 1].ret_addr;
                 env.pop();
-                current_scope = &env[n - 2].env;
+                if env.len() > 0 {
+                    current_scope = &env[n - 2].env;
+                } else {
+                    return stack.pop();
+                }
             },
             '0'...'9' => {
                 if old_num_state {
@@ -240,9 +244,9 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>, set
             'r' => {
                 match (stack.pop(), stack.pop(), stack.pop()) {
                     (Some(a), Some(b), Some(c)) => {
-                        stack.push(b);
-                        stack.push(c);
                         stack.push(a);
+                        stack.push(c);
+                        stack.push(b);
                     },
                     _ => {
                         panic!("Stack size is smaller than 3 @ {}", old_eip.to_usize());
@@ -458,6 +462,39 @@ fn run(code: &[u8], functions: HashMap<ID, Function>, global: Vec<(ID, ID)>, set
                     }
                 }
             },
+            'f' => {
+                match (stack.pop(), stack.pop()) {
+                    (Some(Value::Int(x)), Some(Value::List(mut b))) => {
+                        let id = match Function::search_by_id(current_scope, &ID(x as u32)) {
+                            Some(idx) => idx,
+                            None => panic!("No such function {} in the current scope @ {}", inst, old_eip.to_usize()),
+                        };
+                        match functions.get(&id) {
+                            Some(entry) => {
+                                let mut vec = Vec::new();
+                                let mut eip = entry.ip;
+                                eip.next();
+                                for v in b.iter() {
+                                    let mut stack = Vec::new();
+                                    stack.push(v.clone());
+                                    let ret = run(code, functions, global, setting, &mut stack, eip);
+                                    match ret {
+                                        Some(x) => vec.push(x),
+                                        None => {},
+                                    }
+                                }
+                                stack.push(Value::List(vec));
+                            },
+                            None => {
+                                panic!("No such function: {} @ {}", inst, old_eip.to_usize());
+                            }
+                        }
+                    },
+                    _ => {
+                        panic!("Stack size is smaller than 2 @ {}", old_eip.to_usize());
+                    }
+                }
+            }
             _ =>  {
             }
         }
@@ -596,5 +633,6 @@ fn main() {
         }
     }
     let bcode = code.as_bytes();
-    run(bcode, functions, global, set);
+    let mut stack = Vec::new();
+    run(bcode, &functions, &global, &set, &mut stack,IP(0));
 }
